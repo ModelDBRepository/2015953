@@ -1,0 +1,222 @@
+//----------------------------------------------------------------------------
+//  general parameters
+//----------------------------------------------------------------------------
+dt=0.02
+tstop = 5000
+runStopAt = tstop
+steps_per_ms = 1/dt
+celsius = 36
+v_init = -65
+
+//----------------------------------------------------------------------------
+//  create compartments and insert passive properties and channels
+//----------------------------------------------------------------------------
+
+create PRE,ON1,ON2,ON3,ON4
+forall {
+  diam=20
+  L=20
+  insert pas
+    g_pas=0.0002
+    e_pas=-65
+  insert hh2    
+    ek = -90
+    ena = 50
+    gnabar_hh2 = 0.1
+    gkbar_hh2 = 0.03
+  insert htc 
+    ghbar_htc = 0.00001
+  insert km 
+    gkbar_km = 0.0008
+}
+
+create OFF1,OFF2,OFF3,OFF4
+forsec "OFF" {
+  diam=27
+  L=27
+  insert pas
+    g_pas=7e-05
+    e_pas=-62 //set to -62.8 to prevent spontaneous spiking
+  insert hh2      
+    ek = -90
+    ena = 50
+    gnabar_hh2 = 0.1
+    gkbar_hh2 = 0.03
+  insert htc 
+    ghbar_htc = 0.00031
+  insert km 
+    gkbar_km = 0.0008
+}
+//----------------------------------------------------------------------------
+//  insert postsynaptic mechansisms
+//----------------------------------------------------------------------------
+
+objectvar a
+a = new AMPA13()             // create synapse
+ON1 a.loc(0.5)             // assign postsynaptic compartment
+a.gmax=4000
+
+objectvar b
+b = new AMPA13()             // create synapse
+ON2 b.loc(0.5)             // assign postsynaptic compartment
+b.gmax=4000
+
+objectvar c
+c = new mglur2()            // create synapse
+OFF2 c.loc(0.5)             // assign postsynaptic compartment
+K2_mglur2   = 0.0215 //  (/ms)   backward (unbinding) rate of receptor  //original GABAB receptor was 0.02, modified by TB
+c.gmax = 0.01     //  (umho)      : maximum conductance
+
+objectvar d
+d = new AMPA13()            // create synapse
+ON3 d.loc(0.5)             // assign postsynaptic compartment
+d.gmax=4000
+
+objectvar e
+e = new mglur2()            // create synapse
+OFF3 e.loc(0.5)             // assign postsynaptic compartment
+e.gmax = 0.01
+
+objectvar f
+f = new mglur2()            // create synapse
+OFF1 f.loc(0.5)             // assign postsynaptic compartment
+f.gmax = 0.01
+
+objectvar g
+g = new AMPA13()            // create synapse
+ON4 g.loc(0.5)             // assign postsynaptic compartment
+g.gmax=4000
+
+objectvar h
+h = new mglur2()            // create synapse
+OFF4 h.loc(0.5)             // assign postsynaptic compartment
+h.gmax = 0.01
+
+//---------------------------------------------------------------------------
+//  trigger release using netcon
+//----------------------------------------------------------------------------
+// keep connectivity in a list of NetCon objects
+objref ncl
+ncl = new List()
+
+// attach a diff3D point process called syn1 to the 0.5 location on ON1 (PRIMARY ON UBC)
+objref syn1
+ON1 syn1 = new diff3D(0.5)
+
+diff3D[0].M=3e6
+diff3D[0].R=750
+diff3D[0].Diff=0.33
+diff3D[0].lambd=1.55
+diff3D[0].alpha=0.21
+diff3D[0].amb=0.005
+
+// connect this to syn1 via a new NetCon object
+// and add the NetCon to the list ncl
+PRE ncl.append(new NetCon(&v(0.5),syn1,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer a.C, syn1.T      // connect the output range variable C (concentration) from 3Ddiff.mod with the variable T (transmitter) used in ampa13.mod
+
+//////////////SECOND LEVEL ON UBC//////////////////
+
+objref syn2
+ON2 syn2 = new diff3D(0.5)
+
+diff3D[1].M=3e6
+diff3D[1].R=750
+diff3D[1].Diff=0.33
+diff3D[1].lambd=1.55
+diff3D[1].alpha=0.21
+diff3D[1].amb=0.005
+
+ON1 ncl.append(new NetCon(&v(0.5),syn2,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer b.C, syn2.T     //ON1 to ON2
+
+//////////////SECOND LEVEL OFF UBC/////////////////
+
+objref syn3
+OFF2 syn3 = new diff3D(0.5)
+
+diff3D[2].M=3e5
+diff3D[2].R=1750
+diff3D[2].Diff=0.33
+diff3D[2].lambd=1.55
+diff3D[2].alpha=0.21
+diff3D[2].amb=0
+
+ON1 ncl.append(new NetCon(&v(0.5),syn3,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer c.C, syn3.T     //ON1 to OFF2
+
+//////////////THIRD LEVEL ON UBC/////////////////
+objref syn4
+ON3 syn4 = new diff3D(0.5)
+
+diff3D[3].M=3e6
+diff3D[3].R=750
+diff3D[3].Diff=0.33
+diff3D[3].lambd=1.55
+diff3D[3].alpha=0.21
+diff3D[3].amb=0.005
+
+ON2 ncl.append(new NetCon(&v(0.5),syn4,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer d.C, syn4.T     //ON2 to ON3
+
+//////////////THIRD LEVEL OFF UBC/////////////////
+objref syn5
+OFF3 syn5 = new diff3D(0.5)
+
+diff3D[4].M=3e5
+diff3D[4].R=1750
+diff3D[4].Diff=0.33
+diff3D[4].lambd=1.55
+diff3D[4].alpha=0.21
+diff3D[4].amb=0
+
+OFF2 ncl.append(new NetCon(&v(0.5),syn5,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer e.C, syn5.T     //OF to OFF2
+
+//////////////FIRST LEVEL OFF UBC/////////////////
+objref syn6
+OFF1 syn6 = new diff3D(0.5)
+
+diff3D[5].M=3e5
+diff3D[5].R=1750
+diff3D[5].Diff=0.33
+diff3D[5].lambd=1.55
+diff3D[5].alpha=0.21
+diff3D[5].amb=0
+
+PRE ncl.append(new NetCon(&v(0.5),syn6,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer f.C, syn6.T     //PRE to OFF1
+
+//////////////OFF UBC to ON UBC/////////////////
+objref syn7
+ON4 syn7 = new diff3D(0.5)
+
+diff3D[6].M=3e6
+diff3D[6].R=750
+diff3D[6].Diff=0.33
+diff3D[6].lambd=1.55
+diff3D[6].alpha=0.21
+diff3D[6].amb=0.005
+
+OFF1 ncl.append(new NetCon(&v(0.5),syn7,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer g.C, syn7.T     //OFF1 to ON4
+
+//////////////OFF to OFF UBC/////////////////
+objref syn8
+OFF4 syn8 = new diff3D(0.5)
+
+diff3D[7].M=3e5
+diff3D[7].R=1750
+diff3D[7].Diff=0.33
+diff3D[7].lambd=1.55
+diff3D[7].alpha=0.21
+diff3D[7].amb=0
+
+OFF1 ncl.append(new NetCon(&v(0.5),syn8,0,0,0.005)) //last 3 numbers are threshold, delay, weight
+setpointer h.C, syn8.T     //PRE to OFF4
+
+/////INSERT PULSE TRAIN STIMULATOR INTO FIRST ON UBC//////
+/////this was used to stim 50Hz 10x to adjust the synapses in postysnatpic ON and OFF UBCs to produce appropriate currents////
+objectvar p
+PRE p = new Ipulse1(0.5) 
+
